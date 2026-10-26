@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+serve/scratch/
+*.wav
+clone_out/
+smoke_out/

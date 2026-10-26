@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use Maya3, please cite it as below."
+title: "Maya3: Streaming Multilingual Text-to-Speech for Indic Languages"
+authors:
+  - name: "Maya Research"
+version: "1.0"
+date-released: "2026-10-25"
+license: Apache-2.0
+repository-code: "https://github.com/MayaResearch/maya2-native"
+url: "https://huggingface.co/maya-research/maya2-native"
+keywords:
+  - text-to-speech
+  - indic
+  - multilingual
+  - voice-cloning
+  - streaming

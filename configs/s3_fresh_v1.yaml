@@ -1,0 +1,14 @@
+# Maya3 model-architecture config read by maya3.engine.Engine (and the conversion tools) when a checkpoint is loaded.
+# Only the `model` block is used at inference time. `backbone` is always overridden by the caller's backbone dir
+# (a release dir's backbone/ with the Qwen3 config.json + tokenizer); the other keys must match the checkpoint
+# and are cross-checked against its tensors on load.
+model:
+  backbone: backbone
+  attn: sdpa
+  speaker_anchor:
+    enabled: true
+    input_dim: 192
+    hidden: 512
+    dropout: 0.2
+  depth_grouped: true
+  depth_ckpt_from: 9
