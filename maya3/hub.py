@@ -8,6 +8,7 @@
 Release layout (what maya3/tools/convert_to_safetensors.py writes):
     model.safetensors | model-0000k-of-0000N.safetensors + model.safetensors.index.json
     maya3_config.json        resolved model config + format version (+ codec / speaker-encoder repo ids)
+    config.json              short model summary on the Hub (optional; fetched with the release, not read)
     backbone/                Qwen3 config.json + tokenizer files (no weights; the architecture is built from config)
     voices/voices.json       named voices (optional)
 
@@ -32,7 +33,7 @@ MIMI_FILES = ("config.json", "model.safetensors")
 MIMI_PATTERNS = ["config.json", "model.safetensors", "preprocessor_config.json"]
 ECAPA_FILES = ("embedding_model.ckpt",)
 ECAPA_PATTERNS = ["embedding_model.ckpt", "hyperparams.yaml"]
-RELEASE_PATTERNS = ["*.safetensors", "*.safetensors.index.json", RELEASE_CONFIG, "backbone/*", "voices/*", "README.md"]
+RELEASE_PATTERNS = ["*.safetensors", "*.safetensors.index.json", RELEASE_CONFIG, "config.json", "backbone/*", "voices/*", "README.md"]
 
 
 def _offline():
