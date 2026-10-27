@@ -1,4 +1,4 @@
-# Maya3 TTS
+# Maya2 TTS
 
 Streaming multilingual text-to-speech for **11 Indic languages and English**, with 20 built-in voices and
 zero-shot voice cloning. This repository is the **inference engine**: a continuous-batching CUDA-graph engine, a
