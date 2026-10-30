@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `python -m maya3.text` to preview normalization locally with plain text,
+  JSON, or multilingual JSONL input. No GPU, weights, network, or inference
+  dependencies are required when running from a checkout.
+- Keep batch stdout machine-readable and report invalid records with line
+  numbers on stderr. Normalization rules and vendored files are unchanged.
+
 ## 1.0 (2026-10-25)
 
 First public release.
