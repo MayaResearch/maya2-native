@@ -10,6 +10,38 @@ whole server, and the request field `"normalize": false` turns it off for one re
 
 **Dependencies.** Standard library only. The package has no data files.
 
+## Preview normalization without a GPU
+
+From a checkout of this repository, Python 3.10+ can run the normalizer without
+installing the inference dependencies, downloading weights, or making API calls:
+
+```sh
+python -m maya3.text --lang hi --text 'मेरे पास 25 रुपये हैं [laughs]'
+# मेरे पास पच्चीस रुपये हैं [laughs]
+printf 'Pay ₹95.41' | python -m maya3.text --lang en --json
+```
+
+For a corpus with different languages, provide one JSON object per line:
+
+```sh
+printf '%s\n' '{"text":"25","lang":"hi"}' '{"text":"25","lang":"te"}' |
+  python -m maya3.text --jsonl
+```
+
+Each output object contains `lang`, the original `text`, and `normalized`.
+`--lang` supplies a default for JSONL records that omit `lang`; a record's explicit
+language wins. Blank lines are skipped. Malformed records, unsupported languages
+and empty text exit with status 2 and a line number on stderr; earlier output is
+retained, so check the exit status before using a batch. Normalizer diagnostics
+also go to stderr, leaving stdout as valid text or JSON. Input and output stay
+local unless you pipe or redirect them elsewhere.
+
+This previews the same default rules as the server. Its existing fallback can
+retain an unnormalizable span, so successful CLI execution is not proof of
+pronunciation quality. Inspect the output and listen to generated speech before
+relying on a new text pattern. The CLI does not change synthesis or normalization
+rules. See `python -m maya3.text --help` for all options.
+
 **Not supported.** The opt-in identifier modes `FR3_TN_URL_SPELL=1` and `FR3_TN_LONG_DIGITS=1` read
 `identifier_words.json`. That file is not in the fe5e6ec snapshot. With either variable set, the normaliser raises on any text
 that contains a URL, e-mail address or long digit run. The wrapper then passes that piece (the text between

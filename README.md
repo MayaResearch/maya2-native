@@ -80,6 +80,13 @@ with client.audio.speech.with_streaming_response.create(
 - Text is normalised by default. Turn this off with `"normalize": false` per request, or `--no-normalise` for the whole server.
 - `maya3.client` has a small Python client for HTTP and WebSocket.
 
+## Preview text normalization
+
+Want to inspect how numbers, dates or currency will be spoken before generating
+audio? [Preview text normalization locally](maya3/text/README.md#preview-normalization-without-a-gpu)
+with `python -m maya3.text --lang hi --text 'मेरे पास 25 रुपये हैं'`.
+It needs only Python, with no GPU or weights.
+
 ## Voices
 
 | voice | gender | age | languages (>= 1 h trained) | description |
@@ -215,7 +222,7 @@ The CPU tests need no GPU and no weights:
 
 ```bash
 pip install -e ".[dev]" --extra-index-url https://download.pytorch.org/whl/cu128
-./run_tests.sh            # = CUDA_VISIBLE_DEVICES= python -m pytest -q maya3/tests/test_text.py maya3/tests/test_guards.py maya3/tests/test_server.py
+./run_tests.sh            # text, normalization CLI, guards, and fake-engine server checks
 ```
 
 The GPU checks (`maya3/tests/test_backbone_*.py`, `test_depth_fused.py`, `test_rope_kernel.py`, `test_sampling.py`)
