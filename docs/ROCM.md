@@ -31,7 +31,10 @@ not the complete Maya execution paths. The standalone graph test does **not**
 validate capture/replay of the full backbone, depth decoder, or Mimi decoder.
 Fused RoPE/cache, add+RMSNorm, depth sampling, Mimi operations, checkpoint
 loading, speaker conditioning, streaming, and end-to-end audio generation
-remain unverified.
+remain unverified. A repository test suite has now been added under
+`scripts/rocm_tests/`; the expanded tests have not yet been executed on the
+maintainer's RX 9070. See `docs/ROCM_TEST_PLAN.md` for the test inventory,
+commands, acceptance criteria, and local-agent reporting instructions.
 
 ## Why the complete engine is not yet ROCm-ready
 
@@ -62,6 +65,27 @@ The upstream `pyproject.toml` pins torch/torchaudio 2.8.0 and its README
 installation command selects CUDA 12.8 wheels. Install dependencies in a fresh
 environment and select AMD's wheel source explicitly, following the AMD
 installation instructions for the exact OS, ROCm and Python combination.
+
+## Automated kernel validation suite
+
+Run the suite from the repository root with the already validated ROCm Python
+environment. The runner writes a JSON report and returns a non-zero exit code
+when a test fails or errors:
+
+```bash
+python scripts/run_rocm_tests.py --json /tmp/maya-rocm-test-results.json
+```
+
+The suite covers generic PyTorch primitives and graph capture, Maya backbone
+kernels (`_decode_attn`, `_qk_norm_rope_cache`, `_add_rms`), depth kernels
+(`_add_ln`, `_topk_sample`, `_row_exponential`), and graph capture of the
+Maya decode-attention kernel. Tests skipped because ROCm is unavailable are
+not compatibility passes. The suite does not yet instantiate full model-backed
+backbone, depth, Mimi, or Engine components; those require local checkpoints
+and reference fixtures.
+
+See `docs/ROCM_TEST_PLAN.md` for verified historical results, test coverage,
+run instructions, and the JSON report contract.
 
 ## Read-only diagnostic
 
