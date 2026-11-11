@@ -6,7 +6,7 @@ This suite extends the isolated kernel tests with checkpoint-backed validation o
 
 | Gate | Component | Validation |
 |---|---|---|
-| 1 | `serve.fast_backbone.StaticBackbone` | Two consecutive decode steps; fused CUDA-graph path compared with an unfused eager StaticBackbone reference; verifies output shape and finite values |
+| 1 | `serve.fast_backbone.StaticBackbone` | Two consecutive decode steps; graph path compared with same-configuration eager execution; fused-versus-unfused differences are recorded separately as diagnostics |
 | 2 | `serve.fast_depth.FastDepth` | Full 32-codebook frame; graph replay compared with the eager frame body; greedy mode makes the comparison deterministic; compares feedback embedding |
 | 3 | `serve.fast_codec.StaticMimi` | Eager versus graph decode for two consecutive frames; reset reproducibility; verifies frame sample count |
 | 4 | `maya3.engine.Engine` | Full graph warmup; plain-voice synthesis; cancellation after first audio; subsequent request verifies released-slot reuse and queue drain |
@@ -75,9 +75,9 @@ A skipped engine stream is intentionally not considered a complete pass: use it 
 
 ## Important interpretation
 
-1. **StaticBackbone** compares the fused graph path against an unfused eager StaticBackbone reference using identical weights and inputs for two sequential positions. It does not independently establish parity against a separately instantiated upstream Hugging Face model.
+1. **StaticBackbone** first compares graph replay with eager execution using identical fusion flags, weights, inputs, and two sequential positions. It separately records fused-eager versus unfused-eager numerical differences; those diagnostics must not be confused with graph replay correctness. Neither comparison independently establishes parity against a separately instantiated upstream Hugging Face model.
 2. **FastDepth** checks all 32 generated codebook IDs and the feedback embedding. Greedy sampling is enabled only for deterministic validation; the engine's configured sampling mode is restored afterward.
-3. **StaticMimi** compares eager and graph executions of the same static-state decoder, checks two-frame state continuity, and verifies reset reproducibility. A separate reference Mimi decoder comparison and audio-quality evaluation remain desirable.
+3. **StaticMimi** compares eager and graph executions of the same static-state decoder under inference mode, checks two-frame state continuity, and verifies reset reproducibility. A separate reference Mimi decoder comparison and audio-quality evaluation remain desirable.
 4. **Engine** uses the plain voice. The cancellation test requires the request to terminate with the engine's `cancelled` error; it does not accept natural completion as a cancellation pass.
 5. This suite does not establish subjective voice similarity, Tamil/Indian-English pronunciation quality, long-duration stability, streaming SLA, multi-seat throughput, or production readiness.
 6. The script exercises the existing ROCm-compatible PyTorch/HIP `torch.cuda` graph API. It does not change model weights, kernel math, package versions, or dependency pins.
@@ -88,3 +88,14 @@ Run the isolated kernel suite separately as well:
 ~/code/maya/.venv/bin/python scripts/run_rocm_tests.py \
   --json /tmp/maya-rocm-kernel-results.json
 ```
+
+
+## Initial RX 9070 component run
+
+The first user-reported run on the target environment completed all four gates:
+- FastDepth: PASS (32 codebooks; graph/eager feedback maximum absolute error 0).
+- Engine lifecycle: PASS (warmup, plain-voice audio generation, cancellation, slot reuse, and queue drain).
+- StaticBackbone: FAIL at graph-versus-unfused-reference step 1. The original test mixed graph replay and fusion differences in one assertion.
+- StaticMimi: FAIL because the eager test call mutated inference tensors outside `torch.inference_mode()`.
+
+A follow-up test-only change separates StaticBackbone graph-versus-same-configuration-eager parity from fused-versus-unfused diagnostics, and runs the StaticMimi test under inference mode. Commit `0e5f19dbb8cbee2a0367017b1f71a2c449ceda86`. These changes are awaiting a rerun; they are not yet validated.
