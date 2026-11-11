@@ -49,12 +49,21 @@ treat this warning alone as a test failure.
 | test_backend_primitives.py | FP16/BF16 matmul, standalone Triton JIT add, SDPA, generic graph capture/replay | Pending in suite; prior smoke tests exist |
 | test_backbone_kernels.py | _decode_attn, _qk_norm_rope_cache, _add_rms, _decode_attn graph capture | _decode_attn previously passed; expanded cases and other kernels pending |
 | test_depth_kernels.py | _add_ln with/without cross residual, greedy/stochastic _topk_sample, _row_exponential | Pending |
-| scripts/run_rocm_tests.py | Runs suite and emits machine-readable JSON | Pending |
+| scripts/run_rocm_tests.py | Runs isolated suite and emits machine-readable JSON | User-reported run: 12 passed, 0 failed/errors/skips |
+| scripts/run_rocm_component_tests.py | Checkpoint-backed StaticBackbone, FastDepth, StaticMimi, and Engine lifecycle checks | Implemented; awaiting target-machine execution |
 
-These tests exercise individual kernels and primitives. They do not instantiate
-the full checkpoint-backed StaticBackbone, FastDepth, StaticMimi, or Engine.
-Full model/component graph capture and end-to-end synthesis remain separate
-acceptance gates.
+The isolated tests exercise individual kernels and primitives. The aggregate
+run was reported by the user as 12 tests passed, 0 failures, 0 errors, and 0
+skips (4.072 seconds). The machine-readable JSON report was not attached to the
+repository, so per-test records and its environment snapshot are not archived.
+
+A second, checkpoint-backed runner now exercises the first four component
+gates. It is opt-in because it requires local checkpoint, backbone, and Mimi
+assets. It compares StaticBackbone graph/eager decode, FastDepth graph/eager
+32-codebook output, StaticMimi eager/graph frame continuity and reset, then
+Engine warmup, synthesis, cancellation, and slot reuse. See
+`docs/ROCM_COMPONENT_TESTS.md`. This runner is implemented but has not yet been
+executed on the target machine; no component-level PASS is claimed.
 
 ## Run instructions
 
@@ -100,21 +109,24 @@ available. A skipped test is not a pass.
 - WARNING: compiler/runtime warning without a failing test. Include it, but do
   not label the test failed solely because of it.
 
-## Remaining acceptance gates (not covered by this suite)
+## Remaining acceptance gates after the component runner
 
-1. Compare StaticBackbone eager execution against the reference Hugging Face
-   backbone on identical model weights and fixed inputs.
-2. Validate complete backbone graph capture/replay for real model shapes,
-   slot reuse, batch buckets, and context buckets.
-3. Compare FastDepth eager and fused execution against the reference depth
-   decoder, including all 32 codebook levels and per-request sampling.
-4. Validate complete FastDepth graph capture/replay.
-5. Compare StaticMimi eager frame decode against reference Mimi; validate state
-   reset, multi-frame continuity, and complete graph capture/replay.
-6. Validate Engine.warmup(), voice preparation, admission, streaming,
-   cancellation, slot reuse, and end-to-end audio generation.
-7. Measure real-time factor, first-audio latency, throughput, peak VRAM/RAM,
-   and subjective voice identity for Tamil and Indian English.
+1. Execute `scripts/run_rocm_component_tests.sh` on the RX 9070 and archive its
+   JSON report and complete console output. Fix failures without weakening
+   tolerances or converting errors into skips.
+2. Compare StaticBackbone outputs against the reference Hugging Face backbone
+   on identical weights, prompt tokens, and fixed inputs (the current component
+   runner compares graph and eager implementations of StaticBackbone itself).
+3. Compare FastDepth eager/fused results against the reference depth decoder,
+   including non-greedy per-request sampling and numerical/code agreement.
+4. Compare StaticMimi output against the reference Mimi decoder, not only its
+   own eager implementation; add waveform-level and multi-frame quality checks.
+5. Validate cloned-speaker conditioning and reference-audio preparation with
+   the local ECAPA assets.
+6. Run longer streaming/soak and multi-seat concurrency tests; measure real-time
+   factor, first-audio latency, throughput, peak VRAM/RAM, and error recovery.
+7. Evaluate Tamil and Indian English pronunciation, naturalness, and speaker
+   identity using recorded reference samples and an objective/subjective rubric.
 
 These component tests require matching model checkpoints, backbone and Mimi
 assets, and known-good reference outputs. Add them as opt-in tests when those
