@@ -32,10 +32,10 @@ def parse_args():
     p.add_argument("--ckpt", required=True, help="Maya checkpoint or release directory")
     p.add_argument("--backbone-dir", required=True, help="Local Qwen backbone config/tokenizer directory")
     p.add_argument("--mimi-dir", required=True, help="Local Mimi model directory")
-    p.add_argument("--max-seats", type=int, default=2)
+    p.add_argument("--max-seats", type=int, default=1)
     p.add_argument("--capacity", type=int, default=512)
     p.add_argument("--depth-dtype", choices=("fp16", "bf16", "fp32"), default="fp16")
-    p.add_argument("--max-inline-rows", type=int, default=64)
+    p.add_argument("--max-inline-rows", type=int, default=0)
     p.add_argument("--report", default="rocm-component-results.json")
     p.add_argument("--device", default="cuda", help="PyTorch device; use 'cuda' for ROCm/HIP")
     p.add_argument("--skip-engine-stream", action="store_true",
