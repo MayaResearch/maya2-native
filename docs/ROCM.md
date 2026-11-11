@@ -14,24 +14,34 @@ on an AMD Radeon RX 9070 (gfx1201), ROCm 7.1 and PyTorch 2.8.0:
 - A standalone Triton 3.4 JIT elementwise-add kernel: compilation, GPU launch,
   and numerical comparison passed
 - A standalone `torch.cuda.CUDAGraph` matrix-multiplication capture and replay
+- Maya's custom Triton `_decode_attn` kernel: FP16 and BF16 compilation,
+  execution, finite-output checks, and comparison against an independent
+  PyTorch attention reference all passed
 - Finite outputs for the tested shapes
 
+For the Maya `_decode_attn` test, the maximum absolute error against the
+FP32 PyTorch reference was 0.000243 for FP16 and 0.001951 for BF16, within the
+test tolerances of 0.005 and 0.04 respectively. The test used B=2, H=4,
+KV heads=2, head dimension=64, and cache length=128, with causal positions
+37 and 81.
+
 These are maintainer-run smoke tests on the stated hardware/software stack.
-They validate the tested primitives, not the complete Maya execution paths.
-In particular, the standalone Triton test does **not** validate Maya's custom
-attention, fused RoPE, add+RMSNorm, depth sampling, or Mimi operations. The
-standalone graph test does **not** validate capture/replay of the full backbone,
-depth decoder, or Mimi decoder. Checkpoint loading, speaker conditioning,
-streaming, and end-to-end audio generation remain unverified.
+They validate the tested primitives and the tested `_decode_attn` configuration,
+not the complete Maya execution paths. The standalone graph test does **not**
+validate capture/replay of the full backbone, depth decoder, or Mimi decoder.
+Fused RoPE/cache, add+RMSNorm, depth sampling, Mimi operations, checkpoint
+loading, speaker conditioning, streaming, and end-to-end audio generation
+remain unverified.
 
 ## Why the complete engine is not yet ROCm-ready
 
 The current engine has several NVIDIA-oriented fast paths:
 
 - `serve/fast_backbone.py` contains custom Triton attention, fused RoPE/cache,
-  and add+RMSNorm kernels, plus CUDA graph/stream capture paths. The generic
-  Triton and graph smoke tests passed, but these project-specific kernels and
-  capture bodies still need independent validation.
+  and add+RMSNorm kernels, plus CUDA graph/stream capture paths. The
+  `_decode_attn` kernel passed an isolated FP16/BF16 correctness test on the
+  RX 9070. Fused RoPE/cache, add+RMSNorm, and the complete backbone capture
+  body still need independent validation.
 - `serve/fast_depth_kernels.py` contains custom Triton sampling and normalization
   kernels that have not yet been tested on the RX 9070.
 - `serve/fast_depth.py` and `serve/fast_codec.py` capture CUDA graphs; the
@@ -72,8 +82,9 @@ capability or correctness test.
 3. Validate speaker encoder and reference conditioning.
 4. Validate depth decoder eager operations and sampling.
 5. Validate Mimi decoder eager frame decoding and audio output.
-6. Validate the existing Maya Triton kernels individually on ROCm, including
-   attention, fused RoPE/cache, add+RMSNorm, depth add+LayerNorm, and sampling.
+6. Validate the remaining Maya Triton kernels individually on ROCm, including
+   fused RoPE/cache, add+RMSNorm, depth add+LayerNorm, and sampling. The
+   `_decode_attn` kernel has passed its isolated FP16/BF16 correctness test.
 7. Validate graph capture/replay for each complete component (backbone, depth,
    Mimi), not just a standalone matrix multiplication.
 8. Keep optimized paths behind explicit capability/configuration checks and
