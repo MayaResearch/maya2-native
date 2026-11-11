@@ -146,3 +146,17 @@ A separate StaticBackbone diagnostic still shows fused-eager versus unfused-eage
 ## End-to-end synthesis milestone (user-confirmed)
 
 The user subsequently ran `examples/synthesize.py` against the local checkpoint on the RX 9070 ROCm environment and confirmed successful creation of `maya-rocm-demo-ta.wav` using Tamil and the built-in `Kayal` voice. `soundfile` was initially absent from the active Python environment; installing it with the active ROCm interpreter's `python -m pip install soundfile` resolved the issue. This is a successful CLI-to-WAV smoke test. No audio-quality rubric, RTF, peak VRAM/RAM, long-duration test, or voice-cloning result has yet been recorded. Keep the fused-eager versus unfused-eager StaticBackbone mismatch (max absolute errors 0.2265625 and 1.375 over two decode steps) as an unresolved diagnostic.
+
+
+## CUDA backward-compatibility gate (not run)
+
+The maintainer does not have NVIDIA CUDA hardware. Therefore this PR cannot
+claim that CUDA runtime behavior or performance has been regression-tested.
+The production diff is scoped to new ROCm/backend diagnostic and test files
+plus documentation; this is static inspection, not runtime proof.
+
+The CPU-only backend tests verify classification, including the important
+case where a CUDA-built PyTorch has no available GPU. They do not test CUDA
+kernels or inference. The required NVIDIA acceptance matrix and evidence
+requirements are documented in `docs/CUDA_BACKWARD_COMPATIBILITY.md`.
+Keep this gate marked **NOT RUN** until an NVIDIA system executes it.
