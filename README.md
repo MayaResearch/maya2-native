@@ -28,7 +28,7 @@ The pinned runtime is torch 2.8.0 (cu128, triton 3.4.0), transformers 5.6.2 and 
 Mimi codec and the ECAPA speaker encoder are downloaded from Hugging Face on first use. Set `HF_HUB_OFFLINE=1` to
 use only the local cache.
 
-## Quickstart
+## Experimental AMD ROCm status\n\nAn experimental compatibility effort is tracked in [docs/ROCM.md](docs/ROCM.md). Basic PyTorch ROCm primitives have been smoke-tested on an RX 9070, but the complete streaming engine is **not yet validated on AMD**. Do not use the upstream CUDA installation command in a ROCm environment.\n\n## Quickstart
 
 ### Python
 
