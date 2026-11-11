@@ -181,7 +181,12 @@ def test_fast_depth(engine):
             "feedback_max_abs_error": float((graph_feedback - eager_feedback).abs().max().item()),
         }
     finally:
+        # The Python greedy flag is specialized into the captured graph body.
+        # Drop this temporary deterministic graph so Engine.warmup() recaptures
+        # the production sampling mode after the flag has been restored.
         depth.greedy = original_greedy
+        depth.graphs.clear()
+        depth.pool = None
 
 
 def test_static_mimi(engine):
