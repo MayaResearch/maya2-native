@@ -76,7 +76,7 @@ when a test fails or errors:
 python scripts/run_rocm_tests.py --json /tmp/maya-rocm-test-results.json
 ```
 
-The suite covers generic PyTorch primitives and graph capture, Maya backbone
+The suite covers generic PyTorch primitives, standalone Triton JIT and graph capture, Maya backbone
 kernels (`_decode_attn`, `_qk_norm_rope_cache`, `_add_rms`), depth kernels
 (`_add_ln`, `_topk_sample`, `_row_exponential`), and graph capture of the
 Maya decode-attention kernel. Tests skipped because ROCm is unavailable are
