@@ -99,3 +99,21 @@ The first user-reported run on the target environment completed all four gates:
 - StaticMimi: FAIL because the eager test call mutated inference tensors outside `torch.inference_mode()`.
 
 A follow-up test-only change separates StaticBackbone graph-versus-same-configuration-eager parity from fused-versus-unfused diagnostics, and runs the StaticMimi test under inference mode. Commit `0e5f19dbb8cbee2a0367017b1f71a2c449ceda86`. These changes are awaiting a rerun; they are not yet validated.
+
+
+## Revised RX 9070 component run — PASS
+
+The revised runner completed all four gates on the user's Radeon RX 9070 (gfx1201), ROCm 7.1, PyTorch 2.8.0+rocm7.1.0, and Triton 3.4.0 environment.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| StaticBackbone | PASS | Graph versus same-configuration eager maximum absolute error 0.0 for both decode steps |
+| FastDepth | PASS | 32 codebooks; fused kernel path; feedback maximum absolute error 0.0 |
+| StaticMimi | PASS | 32 codebooks; 1,920 samples/frame; two-frame graph/eager maximum absolute error 0.0; reset reproducible |
+| Engine lifecycle | PASS | Warmup, plain-voice synthesis, cancellation, slot reuse, and queue drain |
+
+Engine measurements from this short run: warmup 0.919 s; first-audio latency 0.0360 s for the normal request; reported frame phase approximately 22.36 ms; memory allocation after requests approximately 8.10 GB (reserved approximately 8.23 GB). These are smoke-test observations, not sustained performance or SLA claims.
+
+**Important separate diagnostic:** fused eager versus unfused eager StaticBackbone outputs differed by maximum absolute error 0.2265625 at step 1 and 1.375 at step 2 (mean absolute errors 0.0054241 and 0.0664032). This does not fail the graph-versus-same-configuration-eager criterion, which was exactly zero, but fused/unfused numerical parity remains unresolved. Do not claim parity against the unfused reference. Investigate fused QKV projection/view layout, fused Q/K normalization and RoPE, KV-cache writes/reads, and accumulated sequential-step effects before changing kernels or tolerances.
+
+The machine-readable report supplied by the user was `/tmp/maya-rocm-component-results-v2.json`; it is not checked into the repository.
