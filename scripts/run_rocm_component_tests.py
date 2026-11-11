@@ -192,7 +192,7 @@ def test_static_mimi(engine):
 
     # Reference path: same StaticMimi math, eager execution, with state reset before the sequence.
     codec.reset(0, zero_kv=True)
-    eager_1 = codec._forward(slot_tensor, codes).[:, 0].float().clone()
+    eager_1 = codec._forward(slot_tensor, codes)[:, 0].float().clone()
     eager_2 = codec._forward(slot_tensor, codes).[:, 0].float().clone()
 
     # Graph path: reset to an identical state and replay the same two-frame sequence.
@@ -222,22 +222,30 @@ def _await_request(engine, text, max_frames, cancel_after_first_audio=False, tim
 
     terminal = threading.Event()
     first_audio = threading.Event()
+    holder = {"request": None, "cancel_pending": False}
     events = {"audio_chunks": 0, "terminal": None, "payload": None}
 
     def callback(kind, payload):
         if kind == "audio":
             events["audio_chunks"] += 1
             first_audio.set()
+            if cancel_after_first_audio:
+                request = holder["request"]
+                if request is None:
+                    holder["cancel_pending"] = True
+                else:
+                    request.cancel()
         else:
             events["terminal"] = kind
             events["payload"] = payload
             terminal.set()
 
     req = engine.submit(text, "en", "plain", on_event=callback, max_frames=max_frames, split=False)
-    if cancel_after_first_audio:
-        if not first_audio.wait(timeout_s):
-            raise TimeoutError("request produced no first audio chunk before cancellation timeout")
+    holder["request"] = req
+    if holder["cancel_pending"]:
         req.cancel()
+    if cancel_after_first_audio and not first_audio.wait(timeout_s):
+        raise TimeoutError("request produced no first audio chunk before cancellation timeout")
     if not terminal.wait(timeout_s):
         req.cancel()
         raise TimeoutError(f"request did not terminate within {timeout_s}s")
@@ -269,10 +277,8 @@ def test_engine_lifecycle(engine, skip_stream):
         1000,
         cancel_after_first_audio=True,
     )
-    if cancelled["terminal"] not in ("error", "end"):
-        raise AssertionError(f"unexpected cancellation terminal state: {cancelled}")
-    if cancelled["terminal"] == "error" and cancelled["payload"].get("code") != "cancelled":
-        raise AssertionError(f"cancellation returned unexpected error: {cancelled['payload']}")
+    if cancelled["terminal"] != "error" or cancelled["payload"].get("code") != "cancelled":
+        raise AssertionError(f"request was not cancelled by the cancellation path: {cancelled}")
 
     reused = _await_request(engine, "Verify that a released engine slot can be reused.", 2)
     if reused["terminal"] != "end" or reused["audio_chunks"] < 1:
