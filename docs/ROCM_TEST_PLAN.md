@@ -50,7 +50,7 @@ treat this warning alone as a test failure.
 | test_backbone_kernels.py | _decode_attn, _qk_norm_rope_cache, _add_rms, _decode_attn graph capture | _decode_attn previously passed; expanded cases and other kernels pending |
 | test_depth_kernels.py | _add_ln with/without cross residual, greedy/stochastic _topk_sample, _row_exponential | Pending |
 | scripts/run_rocm_tests.py | Runs isolated suite and emits machine-readable JSON | User-reported run: 12 passed, 0 failed/errors/skips |
-| scripts/run_rocm_component_tests.py | Checkpoint-backed StaticBackbone, FastDepth, StaticMimi, and Engine lifecycle checks | Implemented; awaiting target-machine execution |
+| scripts/run_rocm_component_tests.py | Checkpoint-backed StaticBackbone, FastDepth, StaticMimi, and Engine lifecycle checks | Initial RX 9070 run: FastDepth and Engine PASS; StaticBackbone and StaticMimi FAIL. Test-only corrections committed; rerun pending |
 
 The isolated tests exercise individual kernels and primitives. The aggregate
 run was reported by the user as 12 tests passed, 0 failures, 0 errors, and 0
