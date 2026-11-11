@@ -6,7 +6,7 @@ This suite extends the isolated kernel tests with checkpoint-backed validation o
 
 | Gate | Component | Validation |
 |---|---|---|
-| 1 | `serve.fast_backbone.StaticBackbone` | Two consecutive decode steps; CUDA-graph replay compared with the same implementation's eager path; verifies output shape and finite values |
+| 1 | `serve.fast_backbone.StaticBackbone` | Two consecutive decode steps; fused CUDA-graph path compared with an unfused eager StaticBackbone reference; verifies output shape and finite values |
 | 2 | `serve.fast_depth.FastDepth` | Full 32-codebook frame; graph replay compared with the eager frame body; greedy mode makes the comparison deterministic; compares feedback embedding |
 | 3 | `serve.fast_codec.StaticMimi` | Eager versus graph decode for two consecutive frames; reset reproducibility; verifies frame sample count |
 | 4 | `maya3.engine.Engine` | Full graph warmup; plain-voice synthesis; cancellation after first audio; subsequent request verifies released-slot reuse and queue drain |
@@ -75,7 +75,7 @@ A skipped engine stream is intentionally not considered a complete pass: use it 
 
 ## Important interpretation
 
-1. **StaticBackbone** compares the graph path against the eager implementation using identical weights and inputs for two sequential positions. It does not independently establish parity against a separately instantiated upstream Hugging Face model.
+1. **StaticBackbone** compares the fused graph path against an unfused eager StaticBackbone reference using identical weights and inputs for two sequential positions. It does not independently establish parity against a separately instantiated upstream Hugging Face model.
 2. **FastDepth** checks all 32 generated codebook IDs and the feedback embedding. Greedy sampling is enabled only for deterministic validation; the engine's configured sampling mode is restored afterward.
 3. **StaticMimi** compares eager and graph executions of the same static-state decoder, checks two-frame state continuity, and verifies reset reproducibility. A separate reference Mimi decoder comparison and audio-quality evaluation remain desirable.
 4. **Engine** uses the plain voice. The cancellation test requires the request to terminate with the engine's `cancelled` error; it does not accept natural completion as a cancellation pass.
