@@ -141,3 +141,8 @@ The revised runner passed all four gates on the RX 9070: StaticBackbone graph ve
 The run reported 0.919 s warmup, approximately 36 ms first-audio latency, approximately 22.36 ms frame phase, and approximately 8.10 GB allocated after requests. These are short-run measurements only.
 
 A separate StaticBackbone diagnostic still shows fused-eager versus unfused-eager maximum absolute errors of 0.2265625 (step 1) and 1.375 (step 2). Graph replay parity is established for the tested configuration; fused/unfused reference parity is not. Further investigation is required.
+
+
+## End-to-end synthesis milestone (user-confirmed)
+
+The user subsequently ran `examples/synthesize.py` against the local checkpoint on the RX 9070 ROCm environment and confirmed successful creation of `maya-rocm-demo-ta.wav` using Tamil and the built-in `Kayal` voice. `soundfile` was initially absent from the active Python environment; installing it with the active ROCm interpreter's `python -m pip install soundfile` resolved the issue. This is a successful CLI-to-WAV smoke test. No audio-quality rubric, RTF, peak VRAM/RAM, long-duration test, or voice-cloning result has yet been recorded. Keep the fused-eager versus unfused-eager StaticBackbone mismatch (max absolute errors 0.2265625 and 1.375 over two decode steps) as an unresolved diagnostic.
