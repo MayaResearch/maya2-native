@@ -26,16 +26,18 @@ class BackendInfo:
 
 
 def detect_backend(torch_module=None, *, probe_triton: bool = True) -> BackendInfo:
-    """Detect PyTorch's active accelerator without assuming API == capability.
+    """Detect build/backend identity separately from runtime device availability.
 
     An explicit torch_module is accepted to make detection unit-testable.
+    A CUDA-built PyTorch without an accessible GPU remains backend="cuda",
+    available=False. ROCm is identified by the HIP build marker, not by the
+    torch.cuda namespace (which ROCm also exposes).
     """
     if torch_module is None:
         import torch as torch_module
 
     hip = getattr(getattr(torch_module, "version", None), "hip", None)
     cuda = getattr(getattr(torch_module, "version", None), "cuda", None)
-    available = bool(torch_module.cuda.is_available())
     if hip:
         name = "rocm"
     elif cuda:
@@ -43,11 +45,18 @@ def detect_backend(torch_module=None, *, probe_triton: bool = True) -> BackendIn
     else:
         name = "cpu"
 
+    available = bool(torch_module.cuda.is_available())
     device_name = None
     device_index = None
     if available:
-        device_index = int(torch_module.cuda.current_device())
-        device_name = str(torch_module.cuda.get_device_name(device_index))
+        # Diagnostics must not make backend identification fail if device
+        # metadata cannot be queried (e.g. a driver/runtime initialization issue).
+        try:
+            device_index = int(torch_module.cuda.current_device())
+            device_name = str(torch_module.cuda.get_device_name(device_index))
+        except Exception:
+            device_index = None
+            device_name = None
 
     triton_importable = False
     if probe_triton:
@@ -57,6 +66,7 @@ def detect_backend(torch_module=None, *, probe_triton: bool = True) -> BackendIn
         except Exception:
             pass
 
+    cuda_namespace = getattr(torch_module, "cuda", None)
     return BackendInfo(
         name=name,
         available=available,
@@ -66,7 +76,6 @@ def detect_backend(torch_module=None, *, probe_triton: bool = True) -> BackendIn
         device_name=device_name,
         device_index=device_index,
         triton_importable=triton_importable,
-        # This only reports that the compatibility namespace exposes the symbol.
-        # It is not proof that graph capture/replay works on the selected backend.
-        cuda_graph_api_present=hasattr(torch_module.cuda, "CUDAGraph"),
+        # Symbol presence is diagnostic only, not proof of support/correctness.
+        cuda_graph_api_present=hasattr(cuda_namespace, "CUDAGraph"),
     )
