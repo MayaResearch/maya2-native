@@ -11,21 +11,31 @@ on an AMD Radeon RX 9070 (gfx1201), ROCm 7.1 and PyTorch 2.8.0:
 
 - FP16 and BF16 matrix multiplication
 - FP16 and BF16 `torch.nn.functional.scaled_dot_product_attention`
+- A standalone Triton 3.4 JIT elementwise-add kernel: compilation, GPU launch,
+  and numerical comparison passed
+- A standalone `torch.cuda.CUDAGraph` matrix-multiplication capture and replay
 - Finite outputs for the tested shapes
 
-Those tests validate PyTorch/ROCm primitives only. They do **not** validate Maya
-checkpoint loading, model forward passes, custom Triton kernels, graph capture,
-streaming, speaker conditioning, or Mimi decoding.
+These are maintainer-run smoke tests on the stated hardware/software stack.
+They validate the tested primitives, not the complete Maya execution paths.
+In particular, the standalone Triton test does **not** validate Maya's custom
+attention, fused RoPE, add+RMSNorm, depth sampling, or Mimi operations. The
+standalone graph test does **not** validate capture/replay of the full backbone,
+depth decoder, or Mimi decoder. Checkpoint loading, speaker conditioning,
+streaming, and end-to-end audio generation remain unverified.
 
 ## Why the complete engine is not yet ROCm-ready
 
 The current engine has several NVIDIA-oriented fast paths:
 
-- `serve/fast_backbone.py` contains custom Triton kernels and CUDA graph/stream
-  capture paths.
+- `serve/fast_backbone.py` contains custom Triton attention, fused RoPE/cache,
+  and add+RMSNorm kernels, plus CUDA graph/stream capture paths. The generic
+  Triton and graph smoke tests passed, but these project-specific kernels and
+  capture bodies still need independent validation.
 - `serve/fast_depth_kernels.py` contains custom Triton sampling and normalization
-  kernels.
-- `serve/fast_depth.py` and `serve/fast_codec.py` capture CUDA graphs.
+  kernels that have not yet been tested on the RX 9070.
+- `serve/fast_depth.py` and `serve/fast_codec.py` capture CUDA graphs; the
+  complete captured bodies remain unvalidated on ROCm.
 - `maya3/engine.py` creates CUDA events and uses CUDA backend controls.
 
 PyTorch on ROCm intentionally exposes much of the `torch.cuda` namespace. A
@@ -62,8 +72,12 @@ capability or correctness test.
 3. Validate speaker encoder and reference conditioning.
 4. Validate depth decoder eager operations and sampling.
 5. Validate Mimi decoder eager frame decoding and audio output.
-6. Only then add ROCm-compatible graph capture or Triton kernels, each behind
-   explicit capability checks and independently tested fallbacks.
+6. Validate the existing Maya Triton kernels individually on ROCm, including
+   attention, fused RoPE/cache, add+RMSNorm, depth add+LayerNorm, and sampling.
+7. Validate graph capture/replay for each complete component (backbone, depth,
+   Mimi), not just a standalone matrix multiplication.
+8. Keep optimized paths behind explicit capability/configuration checks and
+   provide an eager PyTorch fallback where a project-specific operation fails.
 
 A complete AMD acceptance run must include end-to-end Tamil and Indian English
 voice-cloning samples, numerical checks, real-time factor, first-audio latency,
