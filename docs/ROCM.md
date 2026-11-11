@@ -31,10 +31,13 @@ not the complete Maya execution paths. The standalone graph test does **not**
 validate capture/replay of the full backbone, depth decoder, or Mimi decoder.
 Fused RoPE/cache, add+RMSNorm, depth sampling, Mimi operations, checkpoint
 loading, speaker conditioning, streaming, and end-to-end audio generation
-remain unverified. A repository test suite has now been added under
-`scripts/rocm_tests/`; the expanded tests have not yet been executed on the
-maintainer's RX 9070. See `docs/ROCM_TEST_PLAN.md` for the test inventory,
-commands, acceptance criteria, and local-agent reporting instructions.
+remain unverified by the isolated tests. The isolated test suite is under
+`scripts/rocm_tests/`. A checkpoint-backed full-component runner is now
+available at `scripts/run_rocm_component_tests.py`; it covers StaticBackbone,
+FastDepth, StaticMimi, and Engine lifecycle checks. These new component tests
+have not yet been executed on the maintainer's RX 9070. See
+`docs/ROCM_TEST_PLAN.md` and `docs/ROCM_COMPONENT_TESTS.md` for scope and
+commands.
 
 ## Why the complete engine is not yet ROCm-ready
 
@@ -86,6 +89,26 @@ and reference fixtures.
 
 See `docs/ROCM_TEST_PLAN.md` for verified historical results, test coverage,
 run instructions, and the JSON report contract.
+
+
+## Checkpoint-backed component validation
+
+The full-component runner is:
+
+```bash
+PYTHON=~/code/maya/.venv/bin/python bash scripts/run_rocm_component_tests.sh \
+  --ckpt /absolute/path/to/checkpoint-or-release \
+  --backbone-dir /absolute/path/to/backbone \
+  --mimi-dir /absolute/path/to/mimi \
+  --report /tmp/maya-rocm-component-results.json
+```
+
+It validates graph/eager consistency for StaticBackbone, all 32 FastDepth
+codebooks, StaticMimi frame-state/reset behavior, and Engine warmup,
+synthesis, cancellation, and slot reuse. It requires local checkpoint assets
+and does not download model weights. The report is a separate acceptance
+artifact from the 12-test isolated-kernel report. The component suite is
+implemented but awaits execution on the target RX 9070 environment.
 
 ## Read-only diagnostic
 
