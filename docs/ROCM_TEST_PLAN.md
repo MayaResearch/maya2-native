@@ -46,7 +46,7 @@ treat this warning alone as a test failure.
 
 | Test module | Coverage | Status before first suite run |
 |---|---|---|
-| test_backend_primitives.py | FP16/BF16 matmul, SDPA, generic graph capture/replay | Pending in suite; prior smoke tests exist |
+| test_backend_primitives.py | FP16/BF16 matmul, standalone Triton JIT add, SDPA, generic graph capture/replay | Pending in suite; prior smoke tests exist |
 | test_backbone_kernels.py | _decode_attn, _qk_norm_rope_cache, _add_rms, _decode_attn graph capture | _decode_attn previously passed; expanded cases and other kernels pending |
 | test_depth_kernels.py | _add_ln with/without cross residual, greedy/stochastic _topk_sample, _row_exponential | Pending |
 | scripts/run_rocm_tests.py | Runs suite and emits machine-readable JSON | Pending |
