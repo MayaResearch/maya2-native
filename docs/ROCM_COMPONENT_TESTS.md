@@ -117,3 +117,8 @@ Engine measurements from this short run: warmup 0.919 s; first-audio latency 0.0
 **Important separate diagnostic:** fused eager versus unfused eager StaticBackbone outputs differed by maximum absolute error 0.2265625 at step 1 and 1.375 at step 2 (mean absolute errors 0.0054241 and 0.0664032). This does not fail the graph-versus-same-configuration-eager criterion, which was exactly zero, but fused/unfused numerical parity remains unresolved. Do not claim parity against the unfused reference. Investigate fused QKV projection/view layout, fused Q/K normalization and RoPE, KV-cache writes/reads, and accumulated sequential-step effects before changing kernels or tolerances.
 
 The machine-readable report supplied by the user was `/tmp/maya-rocm-component-results-v2.json`; it is not checked into the repository.
+
+
+## End-to-end CLI synthesis follow-up
+
+After the four component gates passed, the user ran the standalone CLI synthesis example on the same RX 9070 ROCm environment and confirmed that `maya-rocm-demo-ta.wav` was created successfully. The successful sample used Tamil (`--lang ta`) and the built-in `Kayal` voice. The CLI depends on `soundfile` for WAV writing; the missing module was resolved by installing `soundfile` into the existing ROCm virtual environment using `python -m pip install soundfile`. This is a user-confirmed WAV-generation result, not a voice-cloning or subjective quality evaluation. See `docs/ROCM_END_TO_END_TTS.md`.
