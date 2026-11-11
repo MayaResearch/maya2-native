@@ -50,7 +50,7 @@ treat this warning alone as a test failure.
 | test_backbone_kernels.py | _decode_attn, _qk_norm_rope_cache, _add_rms, _decode_attn graph capture | _decode_attn previously passed; expanded cases and other kernels pending |
 | test_depth_kernels.py | _add_ln with/without cross residual, greedy/stochastic _topk_sample, _row_exponential | Pending |
 | scripts/run_rocm_tests.py | Runs isolated suite and emits machine-readable JSON | User-reported run: 12 passed, 0 failed/errors/skips |
-| scripts/run_rocm_component_tests.py | Checkpoint-backed StaticBackbone, FastDepth, StaticMimi, and Engine lifecycle checks | Initial RX 9070 run: FastDepth and Engine PASS; StaticBackbone and StaticMimi FAIL. Test-only corrections committed; rerun pending |
+| scripts/run_rocm_component_tests.py | Checkpoint-backed StaticBackbone, FastDepth, StaticMimi, and Engine lifecycle checks | Revised RX 9070 run: all four gates PASS. Fused-versus-unfused StaticBackbone numerical parity remains a separate open diagnostic |
 
 The isolated tests exercise individual kernels and primitives. The aggregate
 run was reported by the user as 12 tests passed, 0 failures, 0 errors, and 0
@@ -132,3 +132,12 @@ These component tests require matching model checkpoints, backbone and Mimi
 assets, and known-good reference outputs. Add them as opt-in tests when those
 local asset paths and fixtures are supplied; this suite does not guess paths
 or download model weights.
+
+
+## Revised checkpoint-backed component run
+
+The revised runner passed all four gates on the RX 9070: StaticBackbone graph versus same-configuration eager (two steps, max absolute error 0.0), FastDepth (32 codebooks, feedback max absolute error 0.0), StaticMimi (two frames, graph/eager max absolute error 0.0, reset reproducible), and Engine lifecycle (warmup, synthesis, cancellation, slot reuse, queue drain).
+
+The run reported 0.919 s warmup, approximately 36 ms first-audio latency, approximately 22.36 ms frame phase, and approximately 8.10 GB allocated after requests. These are short-run measurements only.
+
+A separate StaticBackbone diagnostic still shows fused-eager versus unfused-eager maximum absolute errors of 0.2265625 (step 1) and 1.375 (step 2). Graph replay parity is established for the tested configuration; fused/unfused reference parity is not. Further investigation is required.
