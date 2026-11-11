@@ -2,7 +2,16 @@ from __future__ import annotations
 import unittest
 import torch
 import torch.nn.functional as F
+import triton
+import triton.language as tl
 from ._common import require_rocm, assert_finite
+
+@triton.jit
+def _elementwise_add(X, Y, Z, N: tl.constexpr, BLOCK: tl.constexpr):
+    offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    x = tl.load(X + offsets, offsets < N, other=0.0)
+    y = tl.load(Y + offsets, offsets < N, other=0.0)
+    tl.store(Z + offsets, x + y, offsets < N)
 
 class BackendPrimitiveTests(unittest.TestCase):
     def test_matmul_fp16_bf16(self):
@@ -14,6 +23,17 @@ class BackendPrimitiveTests(unittest.TestCase):
                 y = a @ b
                 assert_finite(self, y, f"matmul {dtype}")
                 self.assertEqual(tuple(y.shape), (1024, 1024))
+
+    def test_standalone_triton_jit_add(self):
+        device = require_rocm(self)
+        n = 4096
+        x = torch.randn(n, device=device, dtype=torch.float32)
+        y = torch.randn_like(x)
+        out = torch.empty_like(x)
+        _elementwise_add[(triton.cdiv(n, 256),)](x, y, out, N=n, BLOCK=256)
+        torch.cuda.synchronize(device)
+        assert_finite(self, out, "standalone Triton add")
+        torch.testing.assert_close(out, x + y, rtol=0.0, atol=0.0)
 
     def test_sdpa_fp16_bf16(self):
         device = require_rocm(self)
