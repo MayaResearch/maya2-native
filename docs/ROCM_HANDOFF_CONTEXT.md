@@ -63,3 +63,13 @@ StaticBackbone graph replay matched same-configuration eager execution exactly (
 ## Evidence discipline
 
 The successful WAV creation is user-confirmed functional evidence for one CLI sample. It is not a performance benchmark or production-readiness claim. Keep user-observed results, automated component tests, and external upstream performance claims clearly separated.
+
+
+## CUDA backward-compatibility status
+
+No NVIDIA CUDA hardware is available to the maintainer, so runtime CUDA
+regression testing has not been performed. The PR's production source diff
+does not directly modify the existing inference engine or CUDA kernel files,
+but that static observation is not a runtime guarantee. The CUDA acceptance
+matrix is documented in `docs/CUDA_BACKWARD_COMPATIBILITY.md` and must be
+run on NVIDIA hardware before claiming CUDA backward compatibility.
