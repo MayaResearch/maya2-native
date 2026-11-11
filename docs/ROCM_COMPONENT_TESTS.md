@@ -122,3 +122,21 @@ The machine-readable report supplied by the user was `/tmp/maya-rocm-component-r
 ## End-to-end CLI synthesis follow-up
 
 After the four component gates passed, the user ran the standalone CLI synthesis example on the same RX 9070 ROCm environment and confirmed that `maya-rocm-demo-ta.wav` was created successfully. The successful sample used Tamil (`--lang ta`) and the built-in `Kayal` voice. The CLI depends on `soundfile` for WAV writing; the missing module was resolved by installing `soundfile` into the existing ROCm virtual environment using `python -m pip install soundfile`. This is a user-confirmed WAV-generation result, not a voice-cloning or subjective quality evaluation. See `docs/ROCM_END_TO_END_TTS.md`.
+
+
+## Evidence status and open numerical diagnostic
+
+The revised RX 9070 run reported all four component gates as PASS. This
+supersedes the earlier initial-run failure and pending-rerun notes above:
+those entries are retained as historical chronology, not current status.
+
+Graph replay versus same-configuration eager execution matched for the two
+tested StaticBackbone decode steps. This does not establish fused-versus-
+unfused parity. That separate comparison remains unresolved (maximum
+absolute error 0.2265625 at step 1 and 1.375 at step 2). Do not relax
+tolerances or describe the unfused reference as matched.
+
+CUDA backward compatibility is a separate, unrun gate because the maintainer
+does not have NVIDIA hardware. See
+`docs/CUDA_BACKWARD_COMPATIBILITY.md`; ROCm PASS results do not imply CUDA
+regression coverage.
