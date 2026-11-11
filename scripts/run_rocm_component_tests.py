@@ -189,7 +189,7 @@ def test_static_mimi(engine):
     # Reference path: same StaticMimi math, eager execution, with state reset before the sequence.
     codec.reset(0, zero_kv=True)
     eager_1 = codec._forward(slot_tensor, codes)[:, 0].float().clone()
-    eager_2 = codec._forward(slot_tensor, codes).[:, 0].float().clone()
+    eager_2 = codec._forward(slot_tensor, codes)[:, 0].float().clone()
 
     # Graph path: reset to an identical state and replay the same two-frame sequence.
     codec.reset(0, zero_kv=True)
