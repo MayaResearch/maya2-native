@@ -104,17 +104,17 @@ def test_static_backbone(engine):
 
     graph_backbone = engine.backbone
     graph_backbone.free(0)
-    eager_backbone = StaticBackbone(
+    reference_backbone = StaticBackbone(
         engine.model.backbone,
         max_slots=1,
         capacity=engine.cfg.capacity,
         batch_buckets=(1,),
         ctx_buckets=tuple(sorted(set((min(256, engine.cfg.capacity), engine.cfg.capacity)))),
         attention="triton",
-        fused_norm=engine.cfg.fused_norm,
+        fused_norm=False,
         use_graphs=False,
-        fuse_proj=engine.cfg.fuse_proj,
-        fuse_rope=engine.cfg.fuse_rope,
+        fuse_proj=False,
+        fuse_rope=False,
     )
     device = engine.device
     dtype = graph_backbone.dtype
@@ -124,23 +124,24 @@ def test_static_backbone(engine):
     x2 = torch.randn(1, hidden, device=device, dtype=dtype) * 0.05
 
     graph_1 = graph_backbone.step([0], x1)
-    eager_1 = eager_backbone.step([0], x1)
-    assert_close("StaticBackbone first-step graph/eager", graph_1, eager_1)
+    reference_1 = reference_backbone.step([0], x1)
+    assert_close("StaticBackbone graph versus unfused reference (step 1)", graph_1, reference_1)
 
     graph_2 = graph_backbone.step([0], x2)
-    eager_2 = eager_backbone.step([0], x2)
-    assert_close("StaticBackbone second-step graph/eager", graph_2, eager_2)
+    reference_2 = reference_backbone.step([0], x2)
+    assert_close("StaticBackbone graph versus unfused reference (step 2)", graph_2, reference_2)
     assert graph_1.shape == (1, hidden)
     assert graph_2.shape == (1, hidden)
     graph_backbone.free(0)
-    eager_backbone.free(0)
+    reference_backbone.free(0)
     return {
         "attention": graph_backbone.attention,
         "fuse_rope": graph_backbone.fuse_rope,
+        "reference_path": "unfused eager StaticBackbone",
         "graph_count": len(graph_backbone.graphs),
         "steps_compared": 2,
-        "max_abs_error_step1": float((graph_1 - eager_1).abs().max().item()),
-        "max_abs_error_step2": float((graph_2 - eager_2).abs().max().item()),
+        "max_abs_error_step1": float((graph_1 - reference_1).abs().max().item()),
+        "max_abs_error_step2": float((graph_2 - reference_2).abs().max().item()),
     }
 
 
