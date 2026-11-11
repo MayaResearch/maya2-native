@@ -141,47 +141,43 @@ def test_static_backbone(engine):
 
 
 def test_fast_depth(engine):
-    from serve.fast_depth import FastDepth
-
+    depth = engine.depth
     voice = engine.registry.get("plain")
     engine.prepare_voice(voice)
-    dtype = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}[engine.cfg.depth_dtype]
-    depth = FastDepth(
-        engine.model,
-        max_slots=1,
-        dtype=dtype,
-        batch_buckets=(1,),
-        seed=1702,
-        greedy=True,
-        compile=False,
-        fused=False,
-    )
     depth.set_speaker(0, voice.mem, voice.rmask)
+    original_greedy = depth.greedy
+    depth.greedy = True
     device = engine.device
+    dtype = depth.dtype
     torch.manual_seed(1703)
     h = torch.randn(1, depth.depth.in_proj.in_features, device=device, dtype=dtype) * 0.05
     cb0 = torch.zeros(1, device=device, dtype=torch.long)
     slots_idx = torch.zeros(1, device=device, dtype=torch.long)
 
-    eager_codes, eager_feedback = depth._compute(slots_idx, h, cb0)
-    depth.warmup((1,))
-    graph_codes, graph_feedback = depth([0], h, cb0)
+    try:
+        depth.warmup((1,))
+        depth.row_ctr[0] = 0
+        eager_codes, eager_feedback = depth._fn(slots_idx, h, cb0)
+        depth.row_ctr[0] = 0
+        graph_codes, graph_feedback = depth([0], h, cb0)
 
-    if graph_codes.shape != (1, 32):
-        raise AssertionError(f"FastDepth must produce [B,32] codes; got {tuple(graph_codes.shape)}")
-    if graph_feedback.shape != (1, engine.feedback.shape[-1]):
-        raise AssertionError(f"unexpected feedback shape {tuple(graph_feedback.shape)}")
-    if not torch.equal(graph_codes, eager_codes):
-        mismatch = int((graph_codes != eager_codes).sum().item())
-        raise AssertionError(f"FastDepth graph/eager code mismatch in {mismatch} positions")
-    assert_close("FastDepth graph/eager feedback", graph_feedback, eager_feedback, atol=2e-2, rtol=2e-2)
-    return {
-        "levels": int(graph_codes.shape[1]),
-        "greedy": True,
-        "fused_kernel_path": False,
-        "graph_buckets": sorted(depth.graphs),
-        "feedback_max_abs_error": float((graph_feedback - eager_feedback).abs().max().item()),
-    }
+        if graph_codes.shape != (1, 32):
+            raise AssertionError(f"FastDepth must produce [B,32] codes; got {tuple(graph_codes.shape)}")
+        if graph_feedback.shape != (1, engine.feedback.shape[-1]):
+            raise AssertionError(f"unexpected feedback shape {tuple(graph_feedback.shape)}")
+        if not torch.equal(graph_codes, eager_codes):
+            mismatch = int((graph_codes != eager_codes).sum().item())
+            raise AssertionError(f"FastDepth graph/eager code mismatch in {mismatch} positions")
+        assert_close("FastDepth graph/eager feedback", graph_feedback, eager_feedback, atol=2e-2, rtol=2e-2)
+        return {
+            "levels": int(graph_codes.shape[1]),
+            "greedy": True,
+            "fused_kernel_path": depth.fused,
+            "graph_buckets": sorted(depth.graphs),
+            "feedback_max_abs_error": float((graph_feedback - eager_feedback).abs().max().item()),
+        }
+    finally:
+        depth.greedy = original_greedy
 
 
 def test_static_mimi(engine):
