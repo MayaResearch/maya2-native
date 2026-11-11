@@ -37,13 +37,14 @@ PYTHON=~/code/maya/.venv/bin/python bash scripts/run_rocm_component_tests.sh \
   --ckpt /absolute/path/to/maya-checkpoint-or-release \
   --backbone-dir /absolute/path/to/backbone \
   --mimi-dir /absolute/path/to/mimi \
-  --max-seats 2 \
+  --max-seats 1 \
   --capacity 512 \
+  --max-inline-rows 0 \
   --depth-dtype fp16 \
   --report /tmp/maya-rocm-component-results.json
 ```
 
-If the ROCm environment is elsewhere, set `PYTHON` to its Python executable. The runner defaults to `cuda` as the PyTorch device name because ROCm exposes its accelerator through PyTorch's `torch.cuda` API; it separately verifies that `torch.version.hip` is populated.
+If the ROCm environment is elsewhere, set `PYTHON` to its Python executable. The conservative defaults are one engine seat and zero inline-prefill rows to limit graph-memory pressure on a 16 GB GPU; increase them only after the single-seat run passes. The runner defaults to `cuda` as the PyTorch device name because ROCm exposes its accelerator through PyTorch's `torch.cuda` API; it separately verifies that `torch.version.hip` is populated.
 
 For a lower-risk run that performs all three component tests and engine graph warmup but does not start the request/cancellation lifecycle:
 
