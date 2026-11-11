@@ -35,6 +35,27 @@ higher-level evidence; see `docs/ROCM_COMPONENT_TESTS.md` and
 quality evaluation, sustained streaming, and production readiness remain
 separate acceptance gates.
 
+## CUDA backward-compatibility boundary
+
+ROCm enablement is additive. Existing NVIDIA CUDA inference remains the
+reference/default path and must not be rewritten, silently reconfigured, or
+made dependent on ROCm diagnostics.
+
+- Do not import or execute ROCm test runners during normal package import or
+  CUDA inference startup.
+- Do not change CUDA kernels, graph/stream behavior, default inference
+  configuration, dependency pins, or environment variables as part of ROCm
+  enablement.
+- Keep ROCm-specific checks and test commands opt-in.
+- Backend identity is derived from the PyTorch build marker (`torch.version.hip`
+  or `torch.version.cuda`), separately from runtime device availability.
+- `torch.cuda` API presence and `CUDAGraph` symbol presence are not proof of
+  NVIDIA CUDA hardware or feature support.
+- CUDA behavior cannot be declared regression-free until the CUDA acceptance
+  suite in `docs/CUDA_BACKWARD_COMPATIBILITY.md` has been run on supported
+  NVIDIA hardware. The current maintainer does not have CUDA hardware, so this
+  gate remains explicitly unverified.
+
 ## Why the complete engine is not yet ROCm-ready
 
 The current engine has several NVIDIA-oriented fast paths:
@@ -45,9 +66,10 @@ The current engine has several NVIDIA-oriented fast paths:
   RX 9070. Fused RoPE/cache, add+RMSNorm, and the complete backbone capture
   body still need independent validation.
 - `serve/fast_depth_kernels.py` contains custom Triton sampling and normalization
-  kernels that have not yet been tested on the RX 9070.
+  kernels that have been tested in the isolated suite on the RX 9070.
 - `serve/fast_depth.py` and `serve/fast_codec.py` capture CUDA graphs; the
-  complete captured bodies remain unvalidated on ROCm.
+  complete captured bodies were exercised by the checkpoint-backed component
+  run, but reference-engine numerical parity remains a separate gate.
 - `maya3/engine.py` creates CUDA events and uses CUDA backend controls.
 
 PyTorch on ROCm intentionally exposes much of the `torch.cuda` namespace. A
@@ -85,7 +107,6 @@ model-backed components; use the checkpoint-backed runner below for that.
 See `docs/ROCM_TEST_PLAN.md` for verified historical results, test coverage,
 run instructions, and the JSON report contract.
 
-
 ## Checkpoint-backed component validation
 
 The full-component runner is:
@@ -101,9 +122,9 @@ PYTHON=~/code/maya/.venv/bin/python bash scripts/run_rocm_component_tests.sh \
 It validates graph/eager consistency for StaticBackbone, all 32 FastDepth
 codebooks, StaticMimi frame-state/reset behavior, and Engine warmup,
 synthesis, cancellation, and slot reuse. It requires local checkpoint assets
-and does not download model weights. The report is a separate acceptance
-artifact from the 12-test isolated-kernel report. The component suite is
-implemented but awaits execution on the target RX 9070 environment.
+and does not download model weights. The revised runner completed all four
+gates on the target RX 9070; see `docs/ROCM_COMPONENT_TESTS.md` for the
+recorded results and limitations.
 
 ## Read-only diagnostic
 
@@ -115,7 +136,8 @@ python scripts/rocm_diagnostics.py
 
 The report distinguishes PyTorch's HIP and CUDA build versions. The
 `cuda_graph_api_present` field reports only symbol presence; it is not a
-capability or correctness test.
+capability or correctness test. Diagnostic device-metadata failures are
+reported as unavailable metadata and do not change backend identity.
 
 ## Porting sequence and acceptance gates
 
@@ -135,7 +157,6 @@ capability or correctness test.
 A complete AMD acceptance run must include end-to-end Tamil and Indian English
 voice-cloning samples, numerical checks, real-time factor, first-audio latency,
 peak VRAM/RAM, and subjective speaker-identity evaluation.
-
 
 ## End-to-end CLI synthesis evidence
 
