@@ -29,15 +29,11 @@ These are maintainer-run smoke tests on the stated hardware/software stack.
 They validate the tested primitives and the tested `_decode_attn` configuration,
 not the complete Maya execution paths. The standalone graph test does **not**
 validate capture/replay of the full backbone, depth decoder, or Mimi decoder.
-Fused RoPE/cache, add+RMSNorm, depth sampling, Mimi operations, checkpoint
-loading, speaker conditioning, streaming, and end-to-end audio generation
-remain unverified by the isolated tests. The isolated test suite is under
-`scripts/rocm_tests/`. A checkpoint-backed full-component runner is now
-available at `scripts/run_rocm_component_tests.py`; it covers StaticBackbone,
-FastDepth, StaticMimi, and Engine lifecycle checks. These new component tests
-have not yet been executed on the maintainer's RX 9070. See
-`docs/ROCM_TEST_PLAN.md` and `docs/ROCM_COMPONENT_TESTS.md` for scope and
-commands.
+The checkpoint-backed component runner and the CLI synthesis run now add
+higher-level evidence; see `docs/ROCM_COMPONENT_TESTS.md` and
+`docs/ROCM_END_TO_END_TTS.md`. Voice cloning, reference-audio conditioning,
+quality evaluation, sustained streaming, and production readiness remain
+separate acceptance gates.
 
 ## Why the complete engine is not yet ROCm-ready
 
@@ -139,3 +135,10 @@ capability or correctness test.
 A complete AMD acceptance run must include end-to-end Tamil and Indian English
 voice-cloning samples, numerical checks, real-time factor, first-audio latency,
 peak VRAM/RAM, and subjective speaker-identity evaluation.
+
+
+## End-to-end CLI synthesis evidence
+
+A user-run Tamil command-line synthesis completed successfully on the RX 9070 ROCm environment and wrote `maya-rocm-demo-ta.wav`. The run used `examples/synthesize.py`, the cached `maya-research/maya2-native` checkpoint, `--lang ta`, `--voice Kayal`, and a fixed seed. The script writes 24 kHz mono WAV output. The user first encountered a missing `soundfile` Python module; installing it into the existing ROCm environment with `python -m pip install soundfile` resolved the import issue. Do not reinstall the upstream CUDA-pinned dependency set to resolve this package omission.
+
+This establishes a successful user-observed CLI-to-WAV synthesis path for that sample. No audio-quality score, real-time factor, peak-memory measurement, voice-cloning result, or sustained-streaming result was supplied, so none is claimed. See `docs/ROCM_END_TO_END_TTS.md` for the reproducible commands and remaining acceptance gates.
