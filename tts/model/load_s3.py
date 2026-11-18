@@ -55,6 +55,7 @@ free-running/serving run is bit-identical either way. The flag is reported in th
 dict and therefore in the `CKPT_LOADED` line, which is the line to check
 before reading any number.
 """
+import contextlib
 import json
 import os
 
@@ -317,6 +318,50 @@ def _reconcile_anchor(cfg_anchor, ckpt_anchor, require_anchor=None):
     return out
 
 
+# ------------------------------------------------------------------------ skip random init
+# torch.nn.init functions replaced with a no-op while the model is built only to be
+# overwritten. Not exhaustive — anything missing stays as-is and the build pays for it.
+_SKIP_INIT_NAMES = ("uniform_", "normal_", "trunc_normal_", "kaiming_uniform_",
+                    "kaiming_normal_", "xavier_uniform_", "xavier_normal_",
+                    "orthogonal_", "constant_", "zeros_", "ones_", "eye_",
+                    "dirac_", "sparse_")
+
+
+def skip_init_enabled():
+    """Env switch `MAYA3_SKIP_INIT` (default "1"); "0"/"false"/"no"/"off"
+    (case-insensitive) turns the skip OFF."""
+    return os.environ.get("MAYA3_SKIP_INIT", "1").strip().lower() not in (
+        "0", "false", "no", "off")
+
+
+@contextlib.contextmanager
+def _skip_param_init():
+    """Replace the random initialisers on torch.nn.init with a no-op `_keep`
+    that returns its tensor untouched.
+
+    SAFE here only because `load_model_for_eval` follows this context with
+    `_strict_diff` + `load_state_dict(strict=True)`, which copy EVERY model
+    tensor from the checkpoint — no parameter is left in whatever `torch.empty`
+    handed the constructor. Patches the process-global `torch.nn.init` MODULE,
+    so it must not run concurrently with other model construction in the same
+    process (the no-op would leak into it). Set `MAYA3_SKIP_INIT=0` to disable
+    (see `skip_init_enabled`); originals are restored in a `finally`, also on
+    exception.
+    """
+    def _keep(tensor, *args, **kwargs):
+        return tensor
+
+    init = torch.nn.init
+    saved = {n: getattr(init, n) for n in _SKIP_INIT_NAMES if hasattr(init, n)}
+    try:
+        for n in saved:
+            setattr(init, n, _keep)
+        yield
+    finally:
+        for n, fn in saved.items():
+            setattr(init, n, fn)
+
+
 # ----------------------------------------------------------------------------- construction
 def build_eval_model(model_cfg, anchor_cfg, amortize_frac, depth_grouped=False):
     """Construct the eval-mode TTSModelV2. Kept as a module-level function so CPU tests can
@@ -399,7 +444,12 @@ def load_model_for_eval(ckpt_dir, device=None, dtype=None, *, cfg=None,
     # eval number. It is in the provenance so a scored checkpoint records the
     # memory recipe it was trained under.
     depth_ckpt_from = model_cfg.get("depth_ckpt_from")
-    model = build_eval_model(model_cfg, anchor_cfg, amortize_frac, depth_grouped)
+    # every tensor is overwritten by the strict load below, so skip the random
+    # init the constructor would burn (~2.7 s of a ~9 s cold load, CPU):
+    with (_skip_param_init() if skip_init_enabled()
+          else contextlib.nullcontext()):
+        model = build_eval_model(model_cfg, anchor_cfg, amortize_frac,
+                                 depth_grouped)
     _strict_diff(model, shapes, src)
 
     if kind == "dcp":
