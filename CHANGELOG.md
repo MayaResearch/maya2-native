@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- load_s3: skip random weight init before the strict checkpoint load (`MAYA3_SKIP_INIT`, default on).
+
 ## 1.0 (2026-10-25)
 
 First public release.
