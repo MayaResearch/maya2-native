@@ -26,6 +26,13 @@ five") or reads in a way listeners do not expect (a PIN code as "five lakh sixty
   P2 uri_dash     "-" inside an e-mail / URL is spoken in the request language, not as the English word "dash"
   P3 uri_acronym  lowercase acronym labels in an e-mail / URL (sbi, kyc, hdfc in hdfcbank, sbi in onlinesbi) are
                   spelled letter by letter in the request language; other labels keep their English spelling
+  P4 gu_time      Gujarati quarter / half / three-quarter hours the way people say them (12-hour clock only):
+                  "નવ વાગીને ત્રીસ મિનિટ" -> "સાડા નવ વાગ્યે", 1:30 -> "દોઢ", 2:30 -> "અઢી", 3:15 -> "સવા ત્રણ",
+                  4:45 -> "પોણા પાંચ"; a glued postposition moves to the hour word ("...મિનિટસુધી" -> "વાગ્યા સુધી")
+  P5 frac_decimal gu / hi amounts with .5 / .25 / .75 as fraction words, not digit by digit:
+                  "એક દશાંશ પાંચ લાખ" -> "દોઢ લાખ", "दो दशमलव पाँच" -> "ढाई", 3.5 -> "સાડા ત્રણ" / "साढ़े तीन",
+                  1.25 -> "સવા એક" / "सवा एक", 2.75 -> "પોણા ત્રણ" / "पौने तीन" (whole part 0-99; versions and
+                  longer decimals are left alone)
 Language-table corrections (Assamese lexicon, "per" units, sub-domain hosts) live in maya3.text.lexicon.
 """
 from __future__ import annotations
@@ -35,7 +42,8 @@ import re
 __all__ = ["pre", "post", "install", "RULES"]
 
 RULES = ("date_2y", "expiry", "fy_range", "digit_groups", "pin_keyword", "pincode", "version", "ta_date_year",
-         "paise", "pct_range", "per_price", "per_annum", "tag_comma", "uri_dash", "uri_acronym")
+         "paise", "pct_range", "per_price", "per_annum", "tag_comma", "uri_dash", "uri_acronym", "gu_time",
+         "frac_decimal")
 
 PAISE = {"en": "paise", "bn": "পয়সা", "gu": "પૈસા", "kn": "ಪೈಸೆ", "ml": "പൈസ", "mr": "पैसे", "pa": "ਪੈਸੇ",
          "ta": "பைசா"}            # hi as or te already have one
@@ -238,11 +246,91 @@ def _pre(text, lang, L):
 
 TAG_COMMA = False   # P1 off: no measured gain (6 vs 6 backstop cuts on the 14 affected emotion rows x2 seeds)
 
+_INDIC_CHAR = r"[\wऀ-෿]"   # \w alone misses dependent vowel signs (ા ે ़ ...)
+
+# P5: fraction words per language: (x.5, x.25, x.75) -> words; whole part 0 / 1 / 2 have their own words
+_FRAC = {
+    "gu": {"half": {0: "અડધો", 1: "દોઢ", 2: "અઢી"}, "half_pre": "સાડા",
+           "quarter": {0: "પા", 1: "સવા"}, "quarter_pre": "સવા",
+           "three_q": {0: "પોણો"}, "three_q_pre": "પોણા"},
+    "hi": {"half": {0: "आधा", 1: "डेढ़", 2: "ढाई"}, "half_pre": "साढ़े",
+           "quarter": {0: "पाव", 1: "सवा"}, "quarter_pre": "सवा",
+           "three_q": {0: "पौना"}, "three_q_pre": "पौने"},
+}
+
+
+def _number_vocab(L):
+    """Words that can be part of a spoken number (so a match does not start in the middle of one)."""
+    v = set(L.ONES) | {L.HUNDRED, L.THOUSAND, L.LAKH, L.CRORE, "અબજ", "अरब"}
+    v |= set(getattr(L, "HUNDREDS_FUSED", {}).values())
+    return v
+
+
+def _gu_time(out, L):
+    """P4: "<h> વાગીને <15|30|45> મિનિટ" (h = 1..12) -> સવા / સાડા (દોઢ, અઢી) / પોણા <h or h+1> વાગ્યે."""
+    ones = L.ONES
+    hour = {ones[i]: i for i in range(1, 13)}
+    alt = "|".join(sorted(map(re.escape, hour), key=len, reverse=True))
+    mins = {ones[15]: 15, ones[30]: 30, ones[45]: 45}
+    malt = "|".join(map(re.escape, mins))
+    pat = re.compile(rf"(?<!\S)({alt}) વાગીને ({malt}) મિનિટ({'|'.join(_GU_PP)})?(?!{_INDIC_CHAR})")
+
+    def f(m):
+        h, mm, pp = hour[m.group(1)], mins[m.group(2)], m.group(3)
+        if mm == 15:
+            w = f"સવા {ones[h]}"
+        elif mm == 30:
+            w = {1: "દોઢ", 2: "અઢી"}.get(h, f"સાડા {ones[h]}")
+        else:
+            w = f"પોણા {ones[h % 12 + 1]}"
+        if not pp:
+            return f"{w} વાગ્યે"
+        return f"{w} વાગ્યા સુધી" if pp == "સુધી" else f"{w} વાગ્યા{pp}"
+    return pat.sub(f, out)
+
+
+_GU_PP = ("માંથી", "સુધી", "થી", "નું", "નો", "ની", "ના", "એ")   # postpositions the normaliser glues onto "મિનિટ"
+
+
+def _frac_decimal(out, lang, L):
+    """P5: "<n> <point> 5 | 2 5 | 7 5" (n = 0..99, nothing after the fraction digits) -> fraction words."""
+    F = _FRAC[lang]
+    dw = _decimal_word(L)
+    ones = L.ONES
+    num = {ones[i]: i for i in range(100)}
+    alt = "|".join(sorted(map(re.escape, num), key=len, reverse=True))
+    d2, d5, d7 = (re.escape(L.digit(i)) for i in (2, 5, 7))
+    digits = "|".join(sorted((re.escape(L.digit(i)) for i in range(10)), key=len, reverse=True))
+    pat = re.compile(rf"(?<!\S)({alt}) {re.escape(dw)} ({d5}|{d2} {d5}|{d7} {d5})(?!{_INDIC_CHAR})"
+                     rf"(?! (?:{digits}|{re.escape(dw)})(?!{_INDIC_CHAR}))")
+    vocab = _number_vocab(L) | {L.letter("V")}
+
+    def f(m):
+        prev = out[:m.start()].split()
+        if prev and prev[-1] in vocab:          # "એકસો બે દશાંશ પાંચ" (102.5), "વી ચાર દશાંશ પાંચ" (v4.5): leave
+            return m.group(0)
+        n, frac = num[m.group(1)], m.group(2)
+        if frac == L.digit(5):
+            return F["half"].get(n, f"{F['half_pre']} {ones[n]}")
+        if frac == f"{L.digit(2)} {L.digit(5)}":
+            return F["quarter"].get(n, f"{F['quarter_pre']} {ones[n]}")
+        return F["three_q"].get(n, f"{F['three_q_pre']} {L.cardinal(n + 1)}")
+    return pat.sub(f, out)
+
 
 def post(out: str, seg: str, lang: str, before_tag: bool) -> str:
     # P1 keep a trailing comma that precedes an inline [tag] (disabled, see TAG_COMMA)
     if TAG_COMMA and before_tag and seg.rstrip().endswith(",") and out.rstrip().endswith("."):
         out = out.rstrip()[:-1] + ","
+    # P4 Gujarati quarter / half hours, P5 gu / hi fractional amounts
+    if lang in _FRAC:
+        try:
+            L = _table(lang)
+            if lang == "gu":
+                out = _gu_time(out, L)
+            out = _frac_decimal(out, lang, L)
+        except Exception:
+            pass
     # P2 spoken hyphen inside e-mail / URL in the request language
     uris = [m.group(0) for m in _URI_RE.finditer(seg)]
     if lang in DASH and uris:
