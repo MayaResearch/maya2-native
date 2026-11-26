@@ -72,6 +72,7 @@ class EngineConfig:
     use_graphs: bool = True
     fuse_proj: bool = False              # backbone: one GEMM for q|k|v and one for gate|up per layer
     fuse_rope: bool = True               # backbone: fused q/k RMSNorm + RoPE + KV-cache write (Triton; implies fuse_proj)
+    gqa_decode: bool = True              # backbone: decode attention reads K/V once per GQA group, up to each row's position
     fused_norm: bool = False             # backbone: F.rms_norm instead of the HF RMSNorm module
     fused_depth: bool = True             # depth: Triton add+LayerNorm and one-kernel top-k sampler
     tiny_attn_depth: bool = True         # depth: Triton attention for the <= 32-position prefix instead of SDPA (fp16/bf16)
@@ -193,7 +194,8 @@ class Engine:
         dt = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[cfg.depth_dtype]
         self.backbone = StaticBackbone(self.model.backbone, n, capacity=cfg.capacity, batch_buckets=rows, ctx_buckets=ctx,
                                        attention="triton", use_graphs=cfg.use_graphs,
-                                       fuse_proj=cfg.fuse_proj, fused_norm=cfg.fused_norm, fuse_rope=cfg.fuse_rope)
+                                       fuse_proj=cfg.fuse_proj, fused_norm=cfg.fused_norm, fuse_rope=cfg.fuse_rope,
+                                       gqa_decode=cfg.gqa_decode)
         if cfg.compile_depth:
             import torch._dynamo as _dyn
             _dyn.config.cache_size_limit = max(64, _dyn.config.cache_size_limit)
