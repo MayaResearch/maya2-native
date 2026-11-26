@@ -59,6 +59,38 @@ if triton is not None:
 
 
     @triton.jit
+    def _decode_attn_gqa(Q,K,V,Out,Slots,Pos,scale,
+                         sq_b,sq_h,sk_s,sk_h,sk_t,so_b,so_h,
+                         G:tl.constexpr,GP:tl.constexpr,D:tl.constexpr,BLOCK:tl.constexpr):
+        """One program per (row, kv head): each K/V block is read once for all G query heads of the group (G padded to
+        GP>=16 rows for tl.dot), and the loop stops at the row's own position instead of the context bucket.  Softmax and
+        P @ V stay in fp32 (no tf32), as in _decode_attn."""
+        row=tl.program_id(0);kvh=tl.program_id(1)
+        slot=tl.load(Slots+row);pos=tl.load(Pos+row)
+        g=tl.arange(0,GP);d=tl.arange(0,D);gm=g<G
+        q=tl.load(Q+row*sq_b+(kvh*G+g)[:,None]*sq_h+d[None,:],mask=gm[:,None],other=0.)
+        kbase=K+slot*sk_s+kvh*sk_h
+        vbase=V+slot*sk_s+kvh*sk_h
+        m=tl.full((GP,),-float('inf'),tl.float32)
+        den=tl.zeros((GP,),tl.float32)
+        acc=tl.zeros((GP,D),tl.float32)
+        for start in range(0,pos+1,BLOCK):
+            t=start+tl.arange(0,BLOCK)
+            valid=t<=pos
+            k=tl.load(kbase+t[:,None]*sk_t+d[None,:],mask=valid[:,None],other=0.)
+            s=tl.dot(q,tl.trans(k))*scale                                     # fp32 accumulate
+            s=tl.where(valid[None,:],s,-float('inf'))
+            bm=tl.maximum(m,tl.max(s,1))
+            w=tl.exp(s-bm[:,None])
+            r=tl.exp(m-bm)
+            v=tl.load(vbase+t[:,None]*sk_t+d[None,:],mask=valid[:,None],other=0.)
+            acc=acc*r[:,None]+tl.dot(w,v.to(tl.float32),input_precision='ieee')   # P @ V in fp32, as _decode_attn
+            den=den*r+tl.sum(w,1)
+            m=bm
+        tl.store(Out+row*so_b+(kvh*G+g)[:,None]*so_h+d[None,:],(acc/den[:,None]).to(Out.dtype.element_ty),mask=gm[:,None])
+
+
+    @triton.jit
     def _qk_norm_rope_cache(QKV,Qout,K,V,Slots,Pos,COS,SIN,WQ,WK,eps,
                             s_qkv,s_qo_b,s_qo_h,sk_s,sk_h,sk_t,s_cos,
                             H:tl.constexpr,KVH:tl.constexpr,D:tl.constexpr):
@@ -111,8 +143,9 @@ class _Graph:
 class StaticBackbone:
     def __init__(self,backbone,max_slots,capacity=1536,
                  batch_buckets=(1,2,4,8,16,24,32,48,64,80,96),ctx_buckets=(512,768,1024,1536),
-                 attention='gather',fused_norm=False,use_graphs=True,fuse_proj=False,fuse_rope=False):
-        """attention: 'gather' (index_select + matmul; the simple path) or 'triton' (in-place kernel)."""
+                 attention='gather',fused_norm=False,use_graphs=True,fuse_proj=False,fuse_rope=False,gqa_decode=False):
+        """attention: 'gather' (index_select + matmul; the simple path) or 'triton' (in-place kernel).
+        gqa_decode (triton only): one program per (row, kv head) reading K/V once per GQA group, up to the row's position."""
         if attention not in ('gather','triton'):raise ValueError('attention must be gather or triton')
         if attention=='triton' and triton is None:raise RuntimeError('triton is not importable')
         with torch.inference_mode():
@@ -125,6 +158,7 @@ class StaticBackbone:
             self.scaling=self.head_dim**-0.5;self.eps=cfg.rms_norm_eps
             self.max_slots=max_slots;self.capacity=capacity;self.dummy=max_slots
             self.attention=attention;self.fused_norm=fused_norm;self.use_graphs=use_graphs
+            self.gqa_decode=gqa_decode and attention=='triton' and self.head_dim>=16
             # fuse_proj: one GEMM for q|k|v and one for gate|up per layer; the HF modules' weights become views of the
             # concatenated tensors (no extra memory; the HF path still works)
             self.fuse_proj=fuse_proj or fuse_rope;self.fuse_rope=fuse_rope and attention=='triton';self.wqkv=[];self.wgu=[]
@@ -240,6 +274,11 @@ class StaticBackbone:
         return ho,y
 
     def _launch(self,q,kc,vc,o,slots,pos,ctx):
+        if self.gqa_decode:
+            _decode_attn_gqa[(q.shape[0],self.kv_heads)](q,kc,vc,o,slots,pos,self.scaling,
+                q.stride(0),q.stride(1),kc.stride(0),kc.stride(1),kc.stride(2),o.stride(0),o.stride(1),
+                G=self.groups,GP=max(16,triton.next_power_of_2(self.groups)),D=self.head_dim,BLOCK=32,num_warps=4,num_stages=2)
+            return o
         block=256
         _decode_attn[(q.shape[0],self.heads)](q,kc,vc,o,slots,pos,self.scaling,
             q.stride(0),q.stride(1),kc.stride(0),kc.stride(1),kc.stride(2),o.stride(0),o.stride(1),

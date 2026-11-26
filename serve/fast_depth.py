@@ -15,7 +15,9 @@ same real-valued function (kernel order differs, so not bit-exact):
 * preallocated within-group KV (one strided write per layer instead of two cats);
 * `is_causal=True` instead of a rebuilt boolean mask; no `_assert_async`;
 * last trunk layer evaluates only the final position (its other outputs are never
-  read: later levels of a shared group reuse this layer's K/V, which come from its input).
+  read: later levels of a shared group reuse this layer's K/V, which come from its input);
+* tiny_attn=True: self-attention over the <= 32-position prefix in one small Triton kernel instead of SDPA
+  (serve/fast_depth_kernels.py; same function, fp32 softmax).
 """
 import copy
 import math
@@ -31,7 +33,8 @@ N_LEVELS = 32
 
 class FastDepth:
     def __init__(self, model, max_slots, dtype=torch.bfloat16, temp=0.7, top_k=64,
-                 batch_buckets=(1, 2, 4, 8, 16, 24, 32, 48, 64, 80, 96), seed=1234, greedy=False, compile=False, fused=False):
+                 batch_buckets=(1, 2, 4, 8, 16, 24, 32, 48, 64, 80, 96), seed=1234, greedy=False, compile=False, fused=False,
+                 tiny_attn=False):
         if model.depth.n_q != N_LEVELS:
             raise ValueError('FastDepth expects the 32-codebook depth stack')
         self.max_slots = int(max_slots)
@@ -61,6 +64,7 @@ class FastDepth:
         # fused=True: Triton add+LayerNorm and one-kernel top-k sampling (serve/fast_depth_kernels.py); RNG = Philox keyed by
         # a device seed the graph increments each replay (same distribution, different random stream than torch's)
         self.fused = bool(fused)
+        self.tiny_attn = bool(tiny_attn)
         self.seed_t = torch.full((1,), int(seed) % (2 ** 31 - 1), device=self.device, dtype=torch.int32)
         # per-slot sampling streams (fused path): seed of the slot's request and its frame counter (incremented in-graph)
         self.row_seed = torch.zeros(self.max_slots + 1, device=self.device, dtype=torch.int32)
@@ -80,6 +84,12 @@ class FastDepth:
         for layer, block in enumerate(self.depth.cross):
             _, v = block.kv(mem).chunk(2, -1)
             self.cross_const[slot, layer].copy_(block.o(v * keep)[0, 0])
+
+    def _attn(self, q, k, v, is_causal=False):
+        if self.tiny_attn:
+            from serve.fast_depth_kernels import tiny_attention
+            return tiny_attention(q, k, v, is_causal=is_causal)
+        return F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
 
     def _compute(self, slots_idx, h, cb0):
         d = self.depth
@@ -107,7 +117,7 @@ class FastDepth:
                     kv[layer][:, level:n].copy_(qkv[:, :, 1:])
                     k = kv[layer][:, :n, 0].transpose(1, 2)
                     v = kv[layer][:, :n, 1].transpose(1, 2)
-                    a = F.scaled_dot_product_attention(q, k, v)
+                    a = self._attn(q, k, v)
                 else:
                     if reused_later:
                         kv[layer][:, :n].copy_(qkv[:, :, 1:])
@@ -115,10 +125,10 @@ class FastDepth:
                     v = qkv[:, :, 2].transpose(1, 2)
                     if layer == LAYERS - 1:
                         # only the final position is read after the last layer; it sees every key
-                        a = F.scaled_dot_product_attention(q[:, :, -1:], k, v)
+                        a = self._attn(q[:, :, -1:], k, v)
                         x = x[:, -1:]
                     else:
-                        a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+                        a = self._attn(q, k, v, is_causal=True)
                 x = x + block.o(a.transpose(1, 2).reshape(B, x.shape[1], D))
                 x = x + block.f2(F.gelu(block.f1(block.n2(x))))
                 x = x + cross[layer]
@@ -170,17 +180,17 @@ class FastDepth:
                     kv[layer][:, level:n].copy_(qkv[:, :, 1:])
                     k = kv[layer][:, :n, 0].transpose(1, 2)
                     v = kv[layer][:, :n, 1].transpose(1, 2)
-                    a = F.scaled_dot_product_attention(q, k, v)
+                    a = self._attn(q, k, v)
                 else:
                     if reused_later:
                         kv[layer][:, :n].copy_(qkv[:, :, 1:])
                     k = qkv[:, :, 1].transpose(1, 2)
                     v = qkv[:, :, 2].transpose(1, 2)
                     if layer == LAYERS - 1:
-                        a = F.scaled_dot_product_attention(q[:, :, -1:], k, v)
+                        a = self._attn(q[:, :, -1:], k, v)
                         x = x[:, -1:]
                     else:
-                        a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+                        a = self._attn(q, k, v, is_causal=True)
                 T = x.shape[1]
                 x, y2 = add_ln(x, block.o(a.transpose(1, 2).reshape(B, T, D)), block.n2)
                 f = block.f2(F.gelu(block.f1(y2)))
