@@ -5,7 +5,10 @@ _add_ln       x' = x + a [+ c[b]] with the same rounding order as torch (each ad
 _topk_sample  per row: logits/temp -> top-k mask -> exponential-race sample (== argmax(p/E), E ~ Exp(1)), i.e. the same
               distribution as the torch path (topk + masked_fill + softmax + exponential_ + div + argmax), one kernel.
               RNG = Philox (tl.rand) keyed by a device-side seed that the captured graph increments every replay.
+_tiny_attn    attention over the depth decoder's short prefixes (N <= 32 keys): one program per (batch, head), the whole
+              score tile in registers, fp32 softmax and P @ V.  SDPA pads these shapes to 128-row tiles; this is the same function in one small kernel.
 """
+import torch.nn.functional as F
 import torch
 import triton
 import triton.language as tl
@@ -96,3 +99,45 @@ def row_exponential(B, V, seeds, ctrs, level=0):
     out = torch.empty(B, V, device=seeds.device, dtype=torch.float32)
     _row_exponential[(B,)](out, seeds, ctrs, level, out.stride(0), V=V, BLOCK=1024)
     return out
+
+
+TINY_ATTN_MAX = 32   # keys per (batch, head); the depth prefix is at most N_LEVELS = 32 positions
+
+
+@triton.jit
+def _tiny_attn(Q, K, V, O, sqb, sqh, sqt, skb, skh, skt, svb, svh, svt, sob, soh, sot, H, T, N, scale,
+               BT: tl.constexpr, BN: tl.constexpr, D: tl.constexpr, CAUSAL: tl.constexpr):
+    pid = tl.program_id(0)
+    b = pid // H
+    h = pid % H
+    t = tl.arange(0, BT)
+    n = tl.arange(0, BN)
+    d = tl.arange(0, D)
+    q = tl.load(Q + b * sqb + h * sqh + t[:, None] * sqt + d[None, :], mask=t[:, None] < T, other=0.)
+    k = tl.load(K + b * skb + h * skh + n[:, None] * skt + d[None, :], mask=n[:, None] < N, other=0.)
+    v = tl.load(V + b * svb + h * svh + n[:, None] * svt + d[None, :], mask=n[:, None] < N, other=0.)
+    s = tl.dot(q, tl.trans(k)) * scale   # fp32 accumulate
+    valid = n[None, :] < N
+    if CAUSAL:   # top-left aligned, as F.scaled_dot_product_attention(is_causal=True)
+        valid = valid & (n[None, :] <= t[:, None])
+    s = tl.where(valid, s, -float("inf"))
+    p = tl.exp(s - tl.max(s, 1)[:, None])
+    # P @ V in fp32 (not tf32): only the output is rounded to the input dtype, so the error stays at or below SDPA's own
+    o = tl.dot(p, v.to(tl.float32), input_precision="ieee") / tl.sum(p, 1)[:, None]
+    tl.store(O + b * sob + h * soh + t[:, None] * sot + d[None, :], o.to(O.dtype.element_ty), mask=t[:, None] < T)
+
+
+def tiny_attention(q, k, v, is_causal=False):
+    """== F.scaled_dot_product_attention(q, k, v, is_causal=is_causal) for q [B, H, T, D], k/v [B, H, N, D] (any strides,
+    last dim contiguous), fp16/bf16, T <= N <= TINY_ATTN_MAX.  Anything else goes to SDPA.  The output is a [B, H, T, D]
+    view of a [B, T, H, D] tensor, so the caller's .transpose(1, 2).reshape(B, T, H * D) needs no copy."""
+    B, H, T, D = q.shape
+    N = k.shape[2]
+    if (q.dtype not in (torch.float16, torch.bfloat16) or not T <= N <= TINY_ATTN_MAX or D < 16 or D & (D - 1)
+            or q.stride(-1) != 1 or k.stride(-1) != 1 or v.stride(-1) != 1):
+        return F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
+    o = torch.empty(B, T, H, D, device=q.device, dtype=q.dtype).transpose(1, 2)
+    _tiny_attn[(B * H,)](q, k, v, o, q.stride(0), q.stride(1), q.stride(2), k.stride(0), k.stride(1), k.stride(2),
+                         v.stride(0), v.stride(1), v.stride(2), o.stride(0), o.stride(1), o.stride(2), H, T, N, D ** -0.5,
+                         BT=16 if T <= 16 else 32, BN=TINY_ATTN_MAX, D=D, CAUSAL=bool(is_causal), num_warps=2 if T <= 16 else 4)
+    return o

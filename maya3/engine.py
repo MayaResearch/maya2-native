@@ -74,6 +74,7 @@ class EngineConfig:
     fuse_rope: bool = True               # backbone: fused q/k RMSNorm + RoPE + KV-cache write (Triton; implies fuse_proj)
     fused_norm: bool = False             # backbone: F.rms_norm instead of the HF RMSNorm module
     fused_depth: bool = True             # depth: Triton add+LayerNorm and one-kernel top-k sampler
+    tiny_attn_depth: bool = True         # depth: Triton attention for the <= 32-position prefix instead of SDPA (fp16/bf16)
     compile_depth: bool = False          # Inductor-fuse the depth frame body before capture (measured: no gain; off)
     free_reference_depth: bool = True    # drop the fp32 reference depth stack once FastDepth holds its own copy (-2.2 GB)
     verify_prefix: bool = False          # debug: assert the cached prefix embedding equals the recomputed one
@@ -197,7 +198,8 @@ class Engine:
             import torch._dynamo as _dyn
             _dyn.config.cache_size_limit = max(64, _dyn.config.cache_size_limit)
         self.depth = FastDepth(self.model, n, dtype=dt, batch_buckets=buckets, seed=cfg.seed + 1, temp=cfg.temp, top_k=cfg.top_k,
-                               compile=cfg.compile_depth, fused=cfg.fused_depth)
+                               compile=cfg.compile_depth, fused=cfg.fused_depth,
+                               tiny_attn=cfg.tiny_attn_depth)
         self.codec = StaticMimi(self.mimi, n, batch_buckets=buckets)
         if cfg.free_reference_depth and getattr(self.model.depth, "groups", None) is not None:
             d = self.model.depth   # only spk_proj_* / null_mem are used after this (speaker memory); FastDepth has its own copy
